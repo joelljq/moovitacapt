@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:mqtt_client/mqtt_client.dart' as mqtt;
+import 'package:mqtt_client/mqtt_client.dart';
+import 'package:mqtt_client/mqtt_server_client.dart';
 
 void main() {
   runApp(BusApp());
@@ -26,7 +28,7 @@ class BusStopsScreen extends StatefulWidget {
 
 class _BusStopsScreenState extends State<BusStopsScreen> {
   List<BusStop> busStops = [];
-  mqtt.MqttClient? client;
+  final MqttServerClient client = MqttServerClient('test.mosquitto.org', '1833');
 
   @override
   void initState() {
@@ -36,24 +38,8 @@ class _BusStopsScreenState extends State<BusStopsScreen> {
   }
 
   Future<void> setupMqtt() async {
-    final clientId = 'bus_app_${DateTime.now().millisecondsSinceEpoch}';
-    client = mqtt.MqttClient('test.mosquitto.org', '1833');
-    client!.port = 1883;
-    client!.keepAlivePeriod = 30;
-    client!.onDisconnected = handleDisconnected;
-    client!.logging(on: true);
-
-    final connMessage = mqtt.MqttConnectMessage()
-        .authenticateAs('', '')
-        .withClientIdentifier(clientId)
-        .keepAliveFor(30)
-        .withWillTopic('bsstatus')
-        .withWillMessage('App disconnected')
-        .startClean()
-        .withWillQos(mqtt.MqttQos.atLeastOnce);
-
     try {
-      await client!.connect(connMessage);
+      await client!.connect();
     } catch (e) {
       print('Exception: $e');
     }
@@ -64,7 +50,8 @@ class _BusStopsScreenState extends State<BusStopsScreen> {
       client!.updates!.listen((List<mqtt.MqttReceivedMessage<mqtt.MqttMessage>> messages) {
         messages.forEach((message) {
           final topic = message.topic;
-          final payload = mqtt.MqttPublishPayload.bytesToStringAsString(message.payload.message);
+          final recMess = messages![0].payload as MqttPublishMessage;
+          final String payload = utf8.decode(recMess.payload.message);
           handleMqttMessage(topic, payload);
         });
       });
@@ -73,78 +60,69 @@ class _BusStopsScreenState extends State<BusStopsScreen> {
     }
   }
 
+
   void handleDisconnected() {
     print('MQTT client disconnected');
     // You can handle reconnection or other actions here
   }
 
   void handleMqttMessage(String topic, String payload) {
-    final busStopNumber = topic.split('/').last;
+    final int busStopNumber = int.parse(topic.split('/').last);
     final data = jsonDecode(payload);
     final status = data['Status'] as String;
-
+    print(busStopNumber.toString());
     setState(() {
-      final busStop = busStops.firstWhere((bs) => bs.number == busStopNumber);
-      busStop.status = (status.toLowerCase() == 'yes');
+      final busStop = busStops[busStopNumber - 1];
+      busStop.status = status == "Yes"? true : false;
     });
   }
+
 
   Future<void> loadBusStops() async {
     String jsonString = '''
       {
         "busStops": [
           {
-            "number": "001",
             "name": "KAP",
             "status": false
           },
           {
-            "number": "002",
             "name": "Main Entrance",
             "status": false
           },
           {
-            "number": "003",
             "name": "Blk 23",
             "status": false
           },
           {
-            "number": "004",
             "name": "Sports Hall",
             "status": false
           },
           {
-            "number": "005",
             "name": "SIT",
             "status": false
           },
           {
-            "number": "006",
             "name": "Blk 44",
             "status": false
           },
           {
-            "number": "007",
             "name": "Blk 37",
             "status": false
           },
           {
-            "number": "008",
             "name": "Makan Place",
             "status": false
           },
           {
-            "number": "009",
             "name": "Health Science",
             "status": false
           },
           {
-            "number": "010",
             "name": "LSCT",
             "status": false
           },
           {
-            "number": "011",
             "name": "Blk 72",
             "status": false
           }
@@ -163,14 +141,15 @@ class _BusStopsScreenState extends State<BusStopsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Bus Stops'),
+        title: Text('Moovita Bus Stops Statuses', style: TextStyle(fontWeight: FontWeight.bold),),
+        backgroundColor: Color(0xFF671919),
       ),
       body: ListView.builder(
         itemCount: busStops.length,
         itemBuilder: (context, index) {
           final busStop = busStops[index];
           return ListTile(
-            title: Text(busStop.name),
+            title: Text(busStop.name, style: TextStyle(fontWeight: FontWeight.bold),),
             trailing: busStop.status ? Icon(Icons.check_circle, color: Colors.green) : Icon(Icons.cancel, color: Colors.red),
           );
         },
@@ -180,15 +159,13 @@ class _BusStopsScreenState extends State<BusStopsScreen> {
 }
 
 class BusStop {
-  final String number;
   final String name;
   bool status;
 
-  BusStop({required this.number, required this.name, required this.status});
+  BusStop({required this.name, required this.status});
 
   factory BusStop.fromJson(Map<String, dynamic> json) {
     return BusStop(
-      number: json['number'],
       name: json['name'],
       status: json['status'],
     );
