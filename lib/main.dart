@@ -29,6 +29,8 @@ class BusStopsScreen extends StatefulWidget {
 class _BusStopsScreenState extends State<BusStopsScreen> {
   List<BusStop> busStops = [];
   final MqttServerClient client = MqttServerClient('test.mosquitto.org', '1833');
+  String status = "Disconnected";
+  Color statuscolor = Colors.red;
 
   @override
   void initState() {
@@ -45,24 +47,37 @@ class _BusStopsScreenState extends State<BusStopsScreen> {
     }
 
     if (client!.connectionStatus!.state == mqtt.MqttConnectionState.connected) {
-      print('MQTT client connected');
-      client!.subscribe('/bsstatus/+', mqtt.MqttQos.atLeastOnce);
-      client!.updates!.listen((List<mqtt.MqttReceivedMessage<mqtt.MqttMessage>> messages) {
-        messages.forEach((message) {
-          final topic = message.topic;
-          final recMess = messages![0].payload as MqttPublishMessage;
-          final String payload = utf8.decode(recMess.payload.message);
-          handleMqttMessage(topic, payload);
+      setState(() {
+        status = "Connected";
+        print(status.toString());
+        statuscolor = Colors.green;
+        print('MQTT client connected');
+        client!.subscribe('/bsstatus/+', mqtt.MqttQos.atLeastOnce);
+        client!.updates!.listen((List<mqtt.MqttReceivedMessage<mqtt.MqttMessage>> messages) {
+          messages.forEach((message) {
+            final topic = message.topic;
+            final recMess = messages![0].payload as MqttPublishMessage;
+            final String payload = utf8.decode(recMess.payload.message);
+            handleMqttMessage(topic, payload);
+          });
         });
       });
     } else {
-      print('MQTT client connection failed');
+      setState(() {
+        print('MQTT client connection failed');
+        status = "Disconnected";
+        statuscolor = Colors.red;
+      });
     }
   }
 
 
   void handleDisconnected() {
-    print('MQTT client disconnected');
+    setState(() {
+      print('MQTT client disconnected');
+      status = "Disconnected";
+      statuscolor = Colors.red;
+    });
     // You can handle reconnection or other actions here
   }
 
@@ -144,16 +159,41 @@ class _BusStopsScreenState extends State<BusStopsScreen> {
         title: Text('Moovita Bus Stops Statuses', style: TextStyle(fontWeight: FontWeight.bold),),
         backgroundColor: Color(0xFF671919),
       ),
-      body: ListView.builder(
-        itemCount: busStops.length,
-        itemBuilder: (context, index) {
-          final busStop = busStops[index];
-          return ListTile(
-            title: Text(busStop.name, style: TextStyle(fontWeight: FontWeight.bold),),
-            trailing: busStop.status ? Icon(Icons.check_circle, color: Colors.green) : Icon(Icons.cancel, color: Colors.red),
-          );
-        },
-      ),
+      body: Column(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey,
+              borderRadius: BorderRadius.circular(20.0),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Text(
+                status,
+                style: TextStyle(
+                  color: statuscolor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: setupMqtt,
+              child: ListView.builder(
+                itemCount: busStops.length,
+                itemBuilder: (context, index) {
+                  final busStop = busStops[index];
+                  return ListTile(
+                    title: Text(busStop.name, style: TextStyle(fontWeight: FontWeight.bold),),
+                    trailing: busStop.status ? Icon(Icons.check_circle, color: Colors.green) : Icon(Icons.cancel, color: Colors.red),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      )
     );
   }
 }
